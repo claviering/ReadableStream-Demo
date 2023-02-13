@@ -5,42 +5,38 @@ export default function Stream() {
   const [generatedDescs, setGeneratedDescs] = useState('');
   const ctrl = useRef<any>()
 
-  function postStream() {
+  async function postStream() {
     setGeneratedDescs('')
     if (ctrl.current) {
       ctrl.current.cancel()
     }
-    fetch('/api/stream')
-      .then((response) => response.body)
-      .then((rb: any) => {
-        const reader = rb.getReader();
-        ctrl.current = reader
-        return new ReadableStream({
-          start(controller) {
-            function push() {
-              reader.read().then(({ done, value }: any) => {
-                if (done) {
-                  controller.close();
-                  return;
-                }
-                controller.enqueue(value);
-                setGeneratedDescs((prev) => prev + new TextDecoder().decode(value));
-                push();
-              });
-            }
+    const response = await fetch("/api/stream", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    if (!response.ok) {
+      throw new Error(response.statusText);
+    }
 
-            push();
-          },
-        });
-      })
-      .then((stream) =>
-        new Response(stream, {
-          headers: { 'Content-Type': 'text/html' },
-        }).text()
-      )
-      .then((result) => {
-        console.log('done', result);
-      });
+    // This data is a ReadableStream
+    const data = response.body;
+    if (!data) {
+      return;
+    }
+
+    const reader = data.getReader();
+    ctrl.current = reader
+    const decoder = new TextDecoder();
+    let done = false;
+
+    while (!done) {
+      const { value, done: doneReading } = await reader.read();
+      done = doneReading;
+      const chunkValue = decoder.decode(value);
+      setGeneratedDescs((prev) => prev + chunkValue);
+    }
   }
   return (
     <div className="container">
